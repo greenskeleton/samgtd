@@ -64,19 +64,22 @@ streams, and a subprocess test there still verifies committed task/identity
 survival after `kill`; both are preserved unchanged and remain useful
 lower-fidelity/faster coverage alongside the real-TCP acceptance test.
 
+Hosted GitHub CI has been observed green for this changeset: PR #1
+(`milestone-001/acceptance-and-ci` → `main`), run
+https://github.com/greenskeleton/samgtd/actions/runs/34630462929,
+`conclusion: success` — see `docs/milestone-001-acceptance.md`, "Hosted CI
+run" for the tested commit and full detail. Third-party GitHub Actions are
+pinned to `gh api`-verified commit SHAs, and the Rust toolchain is pinned to
+an exact verified version (`1.98.1`) in both `rust-toolchain.toml` and CI, no
+longer floating `stable`.
+
 Remaining acceptance/operational gaps (see `docs/milestone-001-acceptance.md`
 for the full, evidenced list):
-- Hosted GitHub CI has not been observed for this changeset; this session had
-  no network/`gh` access. Local checks (including the real two-process test)
-  are separate evidence, not a substitute.
 - Automatic outbound peer connection/retry is not implemented; a client or
   relay connects sync endpoints — `samgtd-testkit`'s relay (used by the
   acceptance test and demo) is that relay, documented as a demo/test harness,
   not a production peer manager.
 - Large-dataset scheduling, total session/memory limits and refined HTTP error
   status codes remain follow-up hardening.
-- Third-party GitHub Actions remain pinned to major-version tags rather than
-  commit SHAs (no network/`gh` access in this session to look up and verify
-  current SHAs); the Rust toolchain itself is now pinned to an exact verified
-  version (`1.98.1`) in both `rust-toolchain.toml` and CI, no longer floating
-  `stable`.
+- Three-or-more-peer / transitive propagation remains untested, explicitly
+  out of scope for this milestone.

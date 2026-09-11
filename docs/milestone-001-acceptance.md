@@ -11,8 +11,10 @@ Distinguish two kinds of statement below: **Assertion** (an automated check
 actually ran and passed, reproducibly, evidenced by a named test/check id)
 and **Expectation** (believed true from reading the code, but not directly
 exercised by an automated check). Nothing in this document is a claim about
-GitHub Actions unless that run is named explicitly under "CI and
-reproducibility" — this session had no access to trigger or read hosted CI.
+GitHub Actions unless that run is named explicitly, with its URL and tested
+commit, under "Hosted CI run" — a prior green run on an older revision (e.g.
+`main`'s `2d0b162`, which predates every change described here) is never
+treated as evidence for the current changeset.
 
 ## How to reproduce everything in this document
 
@@ -86,7 +88,7 @@ From `docs/milestone-001.md`, "## Required":
 | Structured logs | `tracing`/`tracing-subscriber` in `crates/samgtdd/src/main.rs`; captured daemon stdout in `samgtd_testkit::process::Daemon::captured_output` (used for failure diagnostics) | Assertion (logs are produced and captured; not asserted on for content) |
 | Graceful shutdown | Checks `4e`, `7a` (bounded graceful shutdown of real processes, `7a` specifically with an **active** sync connection) | Assertion |
 | No public network bind by default | `Config` defaults to loopback; check `1a-loopback` confirms both real daemons actually bound loopback addresses | Assertion |
-| GitHub CI green | **Not established from this session** — no network/`gh` access to trigger or read Actions. See "CI and reproducibility". | Neither (named gap, not fabricated) |
+| GitHub CI green | Run https://github.com/greenskeleton/samgtd/actions/runs/34630462929 on PR #1, commit `6bef60deb069d71435d819e3ad1066231edcb9ef` (checked out as merge commit `3da218904a634f74ea371147031e413043bb1215`): `conclusion: success`. See "Hosted CI run". | Assertion |
 
 ## Scenario step → checks
 
@@ -233,8 +235,42 @@ actually on disk, not just the last commit.
 
 ## Hosted CI run
 
-<!-- Filled in after pushing the feature branch; do not treat an older run
-     (e.g. on main, before this changeset) as evidence for this revision. -->
+Observed directly via `gh` (not assumed, not carried over from an earlier
+revision):
+
+- **PR**: https://github.com/greenskeleton/samgtd/pull/1
+  (`milestone-001/acceptance-and-ci` → `main`, draft)
+- **Pushed branch head**: `6bef60deb069d71435d819e3ad1066231edcb9ef`
+  (`git rev-parse HEAD` on the branch before push)
+- **Run**: https://github.com/greenskeleton/samgtd/actions/runs/34630462929 —
+  `conclusion: success`, 41s, triggered by the `pull_request` event on the
+  commit above.
+- **Checked-out commit inside the run**: `3da218904a634f74ea371147031e413043bb1215`.
+  This differs from the pushed head SHA because `actions/checkout` on a
+  `pull_request` event checks out GitHub's synthetic PR **merge commit**
+  (branch content merged onto `main`), not the raw branch head — standard,
+  expected GitHub Actions behavior, not a mismatch to be concerned about.
+  The downloaded results artifact's `source.commit` field records exactly
+  this merge commit, with `source.dirty: false` and `source.fingerprint:
+  null` — i.e. the run tested a clean checkout of this changeset, not a
+  dirty/ambiguous tree.
+- **Hosted results artifact** (downloaded via `gh run download 34630462929`
+  and inspected): `result: "pass"`, 60/60 checks `passed: true`, 0
+  `passed: false` — the same 60 checks enumerated above, now independently
+  reproduced on a hosted `ubuntu-24.04` runner rather than only locally.
+  `toolchain.rustc`/`toolchain.cargo` both report `1.98.1`, confirming
+  `rustup toolchain install 1.98.1` succeeded on the runner (not just that
+  the version exists upstream, per the toolchain-availability check above).
+- **Note**: the run logged one informational annotation — "Node.js 20 is
+  deprecated… forced to run on Node.js 24" for `actions/checkout` and
+  `actions/upload-artifact` at the pinned SHAs above. This did not fail the
+  run; it's a heads-up that the next time these Actions are re-pinned, a
+  newer release with native Node 24 support should be preferred.
+
+This satisfies the milestone's hosted-CI requirement for this changeset. A
+prior green run on `main` (commit `2d0b162`, predating every change in this
+document) remains explicitly not evidence for this revision — this run,
+against this commit, is.
 
 ## Review disposition
 
@@ -253,14 +289,6 @@ review), in its numbering:
 
 ## What remains untested / operator follow-ups
 
-- **Hosted GitHub Actions for this exact pushed commit**: see "Hosted CI run"
-  above for the run URL/result once pushed. `.github/workflows/ci.yml` runs
-  the real two-process acceptance test (already part of
-  `cargo test --workspace`) plus the documented demo command, uploading
-  `artifacts/acceptance/` as a workflow artifact on every run (including
-  failed ones). A green run on an older revision (e.g. `main`'s current
-  `2d0b162`, which predates every change in this document) is not evidence
-  for this changeset.
 - **Three-or-more-peer / transitive propagation** is explicitly out of scope
   for this milestone (review finding 3) and remains a named follow-up, not a
   defect in what Milestone 001 claims.

@@ -259,9 +259,10 @@ Rust toolchain (`1.98.1`, matching `rust-toolchain.toml`) and pinned
   `artifacts/acceptance/` (results JSON + transcript) as a workflow artifact
   on every run, including failed ones.
 
-The agents are required to keep CI green. As of this writing, hosted CI has
-not been observed for the current changeset — see
-`docs/milestone-001-acceptance.md`, "CI and reproducibility".
+The agents are required to keep CI green. Hosted CI has been observed green
+for the current changeset (PR #1, run
+https://github.com/greenskeleton/samgtd/actions/runs/34630462929) — see
+`docs/milestone-001-acceptance.md`, "Hosted CI run".
 
 ## First milestone definition
 
@@ -294,5 +295,4 @@ directory, and exits nonzero if anything failed. The same scenario also runs
 as an automated test (`cargo test -p samgtdd --test two_process_acceptance`,
 included in `cargo test --workspace`). See `docs/milestone-001-acceptance.md`
 for the full requirement-by-requirement evidence mapping, exact reproduction
-commands, and named remaining gaps (in particular: hosted CI has not been
-observed for the current changeset).
+commands, the hosted CI run, and named remaining gaps.
