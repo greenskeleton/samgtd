@@ -168,7 +168,7 @@ cargo fmt --all -- --check
 cargo test --workspace
 ```
 
-Commit the first pass yourself:
+For a manual checkpoint, you can commit the first pass yourself:
 
 ```sh
 git add .
@@ -209,18 +209,59 @@ The default sequence is:
 2. Codex independent review
 3. Codex implementation/fixes
 4. Claude final review
+5. Codex feature-branch publication and GitHub CI handoff
 
-It intentionally does not push or merge anything.
+The orchestrator starts from step 1 by default; it does not automatically detect
+steps completed in earlier runs or through `agent.sh`. To resume after the
+bootstrap and Codex review have completed (with `.agent/codex-review.md` saved):
+
+```sh
+./scripts/orchestrate.sh --from codex-implement
+```
+
+To rerun the Codex review first, use `--from codex-review`. The selected step and
+all subsequent steps will run.
+
+Implementation agents may commit and push feature branches, open/update draft
+PRs, run GitHub CI, and fix failures until the latest pushed commit passes.
+The final `codex-ci` orchestration step performs this handoff. Agents must never
+merge, enable auto-merge, or push to the default/protected branch; a human
+reviews and merges the PR. Release/deployment workflows remain outside scope.
+
+To run only the publication/CI handoff after implementation and review:
+
+```sh
+./scripts/orchestrate.sh --from codex-ci
+```
+
+To resume the existing Claude milestone session with this policy:
+
+```sh
+claude --continue "$(cat prompts/006-resume-milestone-001.md)"
+```
+
+Claude's command allowlist permits Git operations and `gh`; AGENTS.md governs
+allowed branch targets and actions. Both Codex launchers enable outbound
+networking while retaining the workspace filesystem sandbox. These settings
+are not GitHub branch protection; human-merge policy also applies to API calls.
 
 ## CI
 
-The package includes a GitHub Actions workflow. Once the agents create the Cargo workspace it should run:
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs, on a pinned
+Rust toolchain (`1.98.1`, matching `rust-toolchain.toml`) and pinned
+`ubuntu-24.04` runner:
 
-- `cargo fmt --check`
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --locked --workspace --all-features` (includes the real
+  two-process acceptance test)
+- `cargo run --locked -p samgtdd --example demo`, uploading
+  `artifacts/acceptance/` (results JSON + transcript) as a workflow artifact
+  on every run, including failed ones.
 
-The agents are required to keep CI green.
+The agents are required to keep CI green. As of this writing, hosted CI has
+not been observed for the current changeset — see
+`docs/milestone-001-acceptance.md`, "CI and reproducibility".
 
 ## First milestone definition
 
@@ -236,3 +277,22 @@ Phase 1 is complete when two daemon/client processes can demonstrate:
 8. repeat sync without losing or duplicating semantic entities.
 
 That test matters more than building CRUD endpoints quickly.
+
+## Milestone 001 acceptance evidence
+
+Run the synthetic two-process acceptance demo (real loopback TCP, real
+`samgtdd` subprocesses, temporary SQLite stores only — never a real/user
+database):
+
+```sh
+cargo run -p samgtdd --example demo
+```
+
+It prints a transcript of every check, writes a machine-readable results
+JSON and a human-readable transcript under the gitignored `artifacts/`
+directory, and exits nonzero if anything failed. The same scenario also runs
+as an automated test (`cargo test -p samgtdd --test two_process_acceptance`,
+included in `cargo test --workspace`). See `docs/milestone-001-acceptance.md`
+for the full requirement-by-requirement evidence mapping, exact reproduction
+commands, and named remaining gaps (in particular: hosted CI has not been
+observed for the current changeset).

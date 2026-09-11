@@ -5,7 +5,7 @@ Small subscription-friendly local orchestrator.
 - Uses the official `claude` and `codex` CLIs.
 - Keeps all shared state in the repository.
 - Captures stdout/stderr per run.
-- Never pushes or merges.
+- Agents publish feature branches and validate GitHub CI; humans merge.
 - Intended to be wrapped by scripts/orchestrate.sh, which runs under caffeinate.
 
 This is deliberately not an LLM itself.
@@ -27,6 +27,7 @@ STEPS = [
     ("codex-review", ROOT / "prompts/002-codex-review.md"),
     ("codex-implement", ROOT / "prompts/003-codex-implement.md"),
     ("claude-review", ROOT / "prompts/004-claude-review.md"),
+    ("codex-ci", ROOT / "prompts/007-feature-branch-ci.md"),
 ]
 
 def require(cmd: str) -> None:
@@ -49,12 +50,13 @@ def command_for(step: str, prompt: str) -> list[str]:
         ]
 
     if step.startswith("codex"):
-        # Workspace writes are allowed; commands outside the sandbox are never
-        # auto-escalated. No danger-full-access / yolo mode is used.
+        # Workspace writes and outbound networking (including GitHub) are allowed.
+        # Commands outside the filesystem sandbox are never auto-escalated.
         return [
-            "codex", "exec",
+            # Approval policy is a top-level option, not an exec option.
+            "codex", "--ask-for-approval", "never", "exec",
             "--sandbox", "workspace-write",
-            "--ask-for-approval", "never",
+            "-c", "sandbox_workspace_write.network_access=true",
             prompt,
         ]
 
@@ -110,7 +112,7 @@ def main() -> None:
         run_step(step, prompt_path)
 
     print("\nAll configured agent steps completed.")
-    print("Review git diff and .agent/runs/ before committing.")
+    print("Review the feature-branch PR, CI evidence, and .agent/runs/. Merge manually.")
 
 if __name__ == "__main__":
     main()

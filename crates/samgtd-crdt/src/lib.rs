@@ -12,6 +12,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CrdtError {
+    #[error("invalid task: {0}")]
+    InvalidTask(#[from] samgtd_domain::TaskError),
+    #[error("conflicting immutable identity or root schema")]
+    ConflictingIdentity,
     #[error("automerge error: {0}")]
     Automerge(#[from] automerge::AutomergeError),
     #[error("failed to decode sync message: {0}")]
@@ -20,21 +24,7 @@ pub enum CrdtError {
     MissingField(&'static str),
 }
 
-/// Fields for a single Task, mirroring `docs/existing-database.md`'s `tasks`
-/// table. `category_id`/`project_id`/`domain_id` are `samgtd_identity` UUIDs
-/// (see `docs/adr/0003-existing-database-coexistence.md`), not the
-/// underlying SQLite integer ids.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskFields {
-    pub uuid: String,
-    pub title: String,
-    pub notes: String,
-    /// `"TODO"` or `"DONE"`, matching the existing database's stored values.
-    pub status: String,
-    pub category_id: String,
-    pub project_id: Option<String>,
-    pub domain_id: Option<String>,
-}
+pub use samgtd_domain::TaskFields;
 
 /// An Automerge document representing one Task entity.
 pub struct TaskDocument {
@@ -42,8 +32,25 @@ pub struct TaskDocument {
 }
 
 impl TaskDocument {
+    /// Empty receiver: no independently initialized schema objects or fields.
+    pub fn empty() -> Self {
+        Self {
+            doc: AutoCommit::new(),
+        }
+    }
+
+    pub fn heads(&mut self) -> Vec<automerge::ChangeHash> {
+        self.doc.get_heads()
+    }
+
+    pub fn set_notes(&mut self, notes: &str) -> Result<(), CrdtError> {
+        self.doc.put(ROOT, "notes", notes)?;
+        Ok(())
+    }
+
     /// Create a brand-new Task document.
     pub fn new(fields: &TaskFields) -> Result<Self, CrdtError> {
+        fields.validate()?;
         let mut doc = AutoCommit::new();
         write_fields(&mut doc, fields)?;
         Ok(Self { doc })
@@ -70,6 +77,9 @@ impl TaskDocument {
     }
 
     pub fn set_status(&mut self, status: &str) -> Result<(), CrdtError> {
+        if !samgtd_domain::is_valid_status(status) {
+            return Err(CrdtError::MissingField("status"));
+        }
         self.doc.put(ROOT, "status", status)?;
         Ok(())
     }
@@ -124,13 +134,20 @@ fn read_str(doc: &AutoCommit, key: &'static str) -> Result<String, CrdtError> {
 }
 
 fn read_opt_str(doc: &AutoCommit, key: &'static str) -> Result<Option<String>, CrdtError> {
-    Ok(doc
-        .get(ROOT, key)?
-        .and_then(|(v, _)| v.to_str().map(str::to_string)))
+    match doc.get(ROOT, key)? {
+        None => Ok(None),
+        Some((value, _)) => value
+            .to_str()
+            .map(|v| Some(v.to_owned()))
+            .ok_or(CrdtError::MissingField(key)),
+    }
 }
 
 fn read_fields(doc: &AutoCommit) -> Result<TaskFields, CrdtError> {
-    Ok(TaskFields {
+    if doc.get_all(ROOT, "uuid")?.len() != 1 {
+        return Err(CrdtError::ConflictingIdentity);
+    }
+    let fields = TaskFields {
         uuid: read_str(doc, "uuid")?,
         title: read_str(doc, "title")?,
         notes: read_str(doc, "notes")?,
@@ -138,7 +155,9 @@ fn read_fields(doc: &AutoCommit) -> Result<TaskFields, CrdtError> {
         category_id: read_str(doc, "category_id")?,
         project_id: read_opt_str(doc, "project_id")?,
         domain_id: read_opt_str(doc, "domain_id")?,
-    })
+    };
+    fields.validate()?;
+    Ok(fields)
 }
 
 /// The root/index document: tracks which task UUIDs exist in the dataset.
@@ -149,6 +168,10 @@ pub struct RootIndexDocument {
 }
 
 impl RootIndexDocument {
+    pub fn heads(&mut self) -> Vec<automerge::ChangeHash> {
+        self.doc.get_heads()
+    }
+
     pub fn new() -> Result<Self, CrdtError> {
         let mut doc = AutoCommit::new();
         doc.put_object(ROOT, "tasks", ObjType::Map)?;
@@ -195,6 +218,9 @@ impl RootIndexDocument {
     }
 
     fn tasks_obj_id(&self) -> Result<automerge::ObjId, CrdtError> {
+        if self.doc.get_all(ROOT, "tasks")?.len() != 1 {
+            return Err(CrdtError::ConflictingIdentity);
+        }
         match self.doc.get(ROOT, "tasks")? {
             Some((automerge::Value::Object(ObjType::Map), id)) => Ok(id),
             _ => Err(CrdtError::MissingField("tasks")),
@@ -218,23 +244,58 @@ mod tests {
             title: title.to_string(),
             notes: String::new(),
             status: "TODO".to_string(),
-            category_id: "cat-inbox".to_string(),
+            category_id: "00000000-0000-4000-8000-000000000001".to_string(),
             project_id: None,
             domain_id: None,
         }
     }
 
     #[test]
+    fn independently_initialized_roots_are_rejected() {
+        let mut a = RootIndexDocument::new().unwrap();
+        let mut b = RootIndexDocument::new().unwrap();
+        a.doc.merge(&mut b.doc).unwrap();
+        assert!(matches!(
+            a.task_uuids(),
+            Err(CrdtError::ConflictingIdentity)
+        ));
+    }
+
+    #[test]
+    fn invalid_status_and_optional_types_are_rejected() {
+        let mut doc = TaskDocument::new(&sample_fields(
+            "00000000-0000-4000-8000-000000000004",
+            "Task",
+        ))
+        .unwrap();
+        assert!(doc.set_status("invalid").is_err());
+        assert_eq!(doc.fields().unwrap().status, "TODO");
+        doc.doc.put(ROOT, "project_id", 42_i64).unwrap();
+        assert!(doc.fields().is_err());
+    }
+
+    #[test]
     fn round_trips_through_save_and_load() {
-        let mut doc = TaskDocument::new(&sample_fields("t1", "Buy milk")).unwrap();
+        let mut doc = TaskDocument::new(&sample_fields(
+            "00000000-0000-4000-8000-000000000004",
+            "Buy milk",
+        ))
+        .unwrap();
         let bytes = doc.save();
         let loaded = TaskDocument::load(&bytes).unwrap();
-        assert_eq!(loaded.fields().unwrap(), sample_fields("t1", "Buy milk"));
+        assert_eq!(
+            loaded.fields().unwrap(),
+            sample_fields("00000000-0000-4000-8000-000000000004", "Buy milk")
+        );
     }
 
     #[test]
     fn concurrent_field_edits_converge_via_sync() {
-        let mut peer_a = TaskDocument::new(&sample_fields("t1", "Buy milk")).unwrap();
+        let mut peer_a = TaskDocument::new(&sample_fields(
+            "00000000-0000-4000-8000-000000000004",
+            "Buy milk",
+        ))
+        .unwrap();
         let mut peer_b = TaskDocument::load(&peer_a.save()).unwrap();
 
         // Offline concurrent edits.
@@ -244,7 +305,8 @@ mod tests {
         // Reconnect: exchange sync messages until both report nothing left.
         let mut state_a = sync::State::new();
         let mut state_b = sync::State::new();
-        loop {
+        for round in 0..100 {
+            assert!(round < 99, "sync did not settle");
             let mut progressed = false;
             if let Some(msg) = peer_a.generate_sync_message(&mut state_a) {
                 peer_b.receive_sync_message(&mut state_b, &msg).unwrap();
@@ -275,12 +337,17 @@ mod tests {
         let mut peer_a = RootIndexDocument::new().unwrap();
         let mut peer_b = RootIndexDocument::load(&peer_a.save()).unwrap();
 
-        peer_a.add_task("task-a").unwrap();
-        peer_b.add_task("task-b").unwrap();
+        peer_a
+            .add_task("00000000-0000-4000-8000-000000000002")
+            .unwrap();
+        peer_b
+            .add_task("00000000-0000-4000-8000-000000000003")
+            .unwrap();
 
         let mut state_a = sync::State::new();
         let mut state_b = sync::State::new();
-        loop {
+        for round in 0..100 {
+            assert!(round < 99, "sync did not settle");
             let mut progressed = false;
             if let Some(msg) = peer_a.generate_sync_message(&mut state_a) {
                 peer_b.receive_sync_message(&mut state_b, &msg).unwrap();
@@ -299,7 +366,13 @@ mod tests {
         let mut b_uuids = peer_b.task_uuids().unwrap();
         a_uuids.sort();
         b_uuids.sort();
-        assert_eq!(a_uuids, vec!["task-a", "task-b"]);
+        assert_eq!(
+            a_uuids,
+            vec![
+                "00000000-0000-4000-8000-000000000002",
+                "00000000-0000-4000-8000-000000000003"
+            ]
+        );
         assert_eq!(a_uuids, b_uuids);
     }
 }

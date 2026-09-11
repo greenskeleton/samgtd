@@ -1,90 +1,44 @@
-# Architecture direction
+# Architecture
 
-Status: Milestone 001 vertical slice implemented. See `docs/milestone-001.md`
-for scope and `docs/protocol.md` for what's implemented vs. still designed.
+Milestone 001 now has a durable application and HTTP/WebSocket path. See
+milestone-001.md for verification limits and ADR 0004 for lifecycle decisions.
 
-## Implemented crates
+- samgtd-domain: task values and UUID/status validation; no transport/storage.
+- samgtd-crdt: per-task and root Automerge documents, fallible projection,
+  serialization, and native sync; depends on domain only.
+- samgtd-store: opaque document blobs, atomic batches, ownership marker and
+  process lock; no domain/CRDT/transport dependency.
+- samgtd-api: health, identity, provisioning, patch and sync contracts.
+- samgtdd: serialized application operations in blocking tasks, Axum routes,
+  connection-scoped sync states and change/shutdown notifications.
 
-```text
-crates/
-  samgtd-domain/   empty stub — no GTD entity types yet (see "Existing
-                    database compatibility" below)
-  samgtd-crdt/      Task + RootIndex Automerge documents, sync message
-                    generate/receive (docs/adr/0001, docs/adr/0003)
-  samgtd-store/     SQLite-backed document blob store (its own database
-                    file, NOT .local/current-gtd.sqlite)
-  samgtd-api/       HealthResponse contract type
-  samgtdd/          Axum/Tokio daemon: /health, persistence init on
-                    startup, graceful shutdown
-```
+Automerge is authoritative. No independent SQL task model competes with it.
+New task creation saves root membership and entity atomically. A failed operation
+cannot leave changed application documents visible in memory. Replicas retain
+stable node/dataset identity across restart; explicit provisioning preserves
+shared root map history.
 
-`samgtd-domain` stays empty: GTD entity types (Task/Project/Category/etc.)
-are deferred until they're needed for real data import, per
-`docs/existing-database.md` and `docs/adr/0003-existing-database-coexistence.md`.
-Milestone 001's Task representation lives directly in `samgtd-crdt` as
-`TaskFields`/`TaskDocument`.
+The supplied legacy database is read-only input, never the daemon's store.
+Unrecognized existing files are refused. Import and live coexistence remain
+deferred. Category UUID references are validated without requiring category
+documents, which are not yet implemented.
 
-## Existing database compatibility
+Tests cover offline same-task edits, same-field conflicts, native unknown-task
+transfer, complete fields/heads after disk reload, transaction rollback, store
+ownership, HTTP task writes, real WebSocket upgrades over duplex streams and
+acknowledged-write survival after subprocess termination — plus, in
+`crates/samgtdd/tests/two_process_acceptance.rs`, the same scenario again
+over **real loopback TCP and real subprocesses** (two, briefly three,
+independent `samgtdd` binaries), using the `samgtd-testkit` crate
+(`crates/samgtd-testkit/`) for process spawn/readiness, a minimal HTTP client,
+a real WebSocket sync relay, post-mortem read-only store inspection, and
+acceptance reporting. That crate is a `[dev-dependencies]`-only harness,
+never a production dependency of `samgtdd`; it's shared between that test and
+the runnable demo (`crates/samgtdd/examples/demo.rs`,
+`cargo run -p samgtdd --example demo`). See
+`docs/milestone-001-acceptance.md` for the full evidence mapping.
+Hosted CI has not been observed for this changeset (no network/`gh` access in
+this session). No production-scale memory or throughput claim is made.
 
-`.local/current-gtd.sqlite` is a real, externally-owned database (see
-`docs/existing-database.md`). `samgtd-store` does not open it or touch its
-schema. `docs/adr/0003-existing-database-coexistence.md` defines a purely
-additive identity-mapping strategy (`samgtd_identity` table) for eventually
-importing its rows, and explicitly defers the live-coexistence question
-(is the owning legacy app still writing to it?) pending operator
-confirmation.
-
-## Proven by test
-
-`crates/samgtd-store/tests/convergence.rs` exercises the full Milestone 001
-scenario end-to-end: two peers create different tasks offline, sync via
-Automerge sync messages, converge, survive a simulated restart (drop +
-reopen `Store` from the same file), and re-sync idempotently without
-duplication.
-
-```text
-                         future clients
-                ┌───────────┬───────────┐
-                │           │           │
-              TUI/Web    Android     Voice/MCP
-                │           │           │
-                └───────────┼───────────┘
-                            │
-                 HTTP + CRDT sync API
-                            │
-                    ┌───────▼───────┐
-                    │    samgtdd    │
-                    │  Axum/Tokio   │
-                    └───────┬───────┘
-                            │
-              ┌─────────────┼─────────────┐
-              │             │             │
-              ▼             ▼             ▼
-          GTD domain    CRDT engine     storage
-                        Automerge        SQLite
-
-Remote mobile path (future):
-
-Android client
-      │
-      │ HTTP/WebSocket over tailnet
-      ▼
-Tailscale / WireGuard+Noise control plane
-      │
-      ▼
-private samgtdd listener
-```
-
-## Boundary rule
-
-Tailscale is a transport/access mechanism, not the domain protocol. `samgtdd` should function perfectly on loopback/LAN without Tailscale.
-
-## Sync rule
-
-CRDT synchronization must be transport-independent above a reliable ordered byte/message stream. WebSocket is the initial transport.
-
-## Authentication
-
-Phase 1 may run unauthenticated on loopback.
-
-Before LAN/Tailscale write access is considered production-ready, add an explicit authentication/authorization design. Do not equate possession of a LAN address with authorization.
+Loopback remains the default. Authentication is required before production remote
+write access; no custom networking cryptography is implemented.

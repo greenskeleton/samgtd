@@ -14,12 +14,15 @@ personal/system names, not fixed vocabulary).
 |---|---|
 | `user_version` | 0 |
 | `application_id` | 0 |
-| `foreign_keys` | 1 (enforced) |
+| `foreign_keys` | Connection-local; 0 on the 2026-09-11 read-only connection |
 | `journal_mode` | `wal` |
 
-WAL mode means a faithful disposable copy of the database requires copying
-`current-gtd.sqlite`, `current-gtd.sqlite-wal`, and `current-gtd.sqlite-shm`
-together (or checkpointing first) — not just the main file.
+Use SQLite's backup API (or CLI .backup) for a consistent disposable snapshot
+while another process may be writing. Sequentially copying main/WAL/SHM files
+does not guarantee consistency. Never checkpoint or modify the supplied original.
+Foreign-key enforcement by the legacy writer cannot be inferred from a separate
+inspection connection. The 2026-09-11 read-only reinspection found no user-defined
+views or triggers.
 
 ## Provenance: externally migrated
 

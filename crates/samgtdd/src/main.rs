@@ -8,5 +8,5 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    samgtdd::run(samgtdd::Config::from_env()).await
+    samgtdd::run(samgtdd::Config::from_env()?).await
 }

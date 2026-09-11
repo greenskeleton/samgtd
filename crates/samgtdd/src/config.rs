@@ -16,28 +16,33 @@ const DEFAULT_DB_PATH: &str = "samgtd-data.sqlite";
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub db_path: PathBuf,
+    /// Optional path to announce the actually-bound listener address on
+    /// (written atomically after a successful `TcpListener::bind`). Mainly
+    /// useful together with `SAMGTD_BIND_PORT=0`: callers that need an
+    /// OS-assigned ephemeral port (tests, running multiple instances) can
+    /// read the real address back here instead of guessing/reserving one.
+    pub ready_path: Option<PathBuf>,
 }
 
 impl Config {
-    pub fn from_env() -> Self {
+    pub fn from_env() -> anyhow::Result<Self> {
         let ip = std::env::var("SAMGTD_BIND_IP")
-            .ok()
-            .and_then(|v| v.parse::<IpAddr>().ok())
-            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-
+            .map(|v| v.parse::<IpAddr>())
+            .unwrap_or(Ok(IpAddr::V4(Ipv4Addr::LOCALHOST)))?;
         let port = std::env::var("SAMGTD_BIND_PORT")
-            .ok()
-            .and_then(|v| v.parse::<u16>().ok())
-            .unwrap_or(DEFAULT_PORT);
+            .map(|v| v.parse::<u16>())
+            .unwrap_or(Ok(DEFAULT_PORT))?;
 
         let db_path = std::env::var("SAMGTD_DB_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DB_PATH));
+        let ready_path = std::env::var("SAMGTD_READY_FILE").ok().map(PathBuf::from);
 
-        Self {
+        Ok(Self {
             bind_addr: SocketAddr::new(ip, port),
             db_path,
-        }
+            ready_path,
+        })
     }
 }
 
@@ -46,6 +51,7 @@ impl Default for Config {
         Self {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
             db_path: PathBuf::from(DEFAULT_DB_PATH),
+            ready_path: None,
         }
     }
 }

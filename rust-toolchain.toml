@@ -1,3 +1,7 @@
 [toolchain]
-channel = "stable"
+# Pinned to the exact stable release verified locally and in CI (see
+# docs/milestone-001-acceptance.md, "CI and reproducibility"), not a floating
+# "stable" channel — a compiler bump should be a deliberate, reviewed change
+# to this file, not something that silently changes what CI checks.
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]

@@ -23,12 +23,15 @@ case "$agent" in
     command -v claude >/dev/null || { echo "claude not found" >&2; exit 127; }
     # Interactive first-run path: permissions remain visible to the operator.
     echo "Starting Claude Code under caffeinate; log: $log"
-    script -q "$log" caffeinate -dimsu claude "$(cat "$prompt_file")"
+    # Replace this shell so edits to the launcher during a session cannot
+    # cause Bash to resume reading it at a stale file offset on exit.
+    exec script -q "$log" caffeinate -dimsu claude "$(cat "$prompt_file")"
     ;;
   codex)
     command -v codex >/dev/null || { echo "codex not found" >&2; exit 127; }
     echo "Starting Codex under caffeinate; log: $log"
-    script -q "$log" caffeinate -dimsu codex "$(cat "$prompt_file")"
+    exec script -q "$log" caffeinate -dimsu codex --sandbox workspace-write \
+      -c sandbox_workspace_write.network_access=true "$(cat "$prompt_file")"
     ;;
   *)
     echo "unknown agent: $agent" >&2

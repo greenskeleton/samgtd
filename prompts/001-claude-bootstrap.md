@@ -69,7 +69,7 @@ Security constraints:
 - bind to 127.0.0.1 by default;
 - do not write a custom cryptographic protocol;
 - do not expose secrets;
-- do not push to GitHub.
+- follow AGENTS.md for feature-branch publication and CI; humans merge.
 
 Important:
 - Keep domain, CRDT, storage, and HTTP boundaries explicit.

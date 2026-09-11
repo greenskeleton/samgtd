@@ -61,11 +61,26 @@ Do not attempt to implement all semantics in the first commit. Preserve room for
 
 Agents may inspect git status/diff/log.
 
+For implementation and orchestration tasks, agents are authorized to create or
+reuse a feature branch, commit task-related changes, push that branch to origin,
+and create/update a draft pull request without requesting further permission.
+Inspect existing collaborative changes before staging; preserve unrelated work
+and never indiscriminately stage private inputs or runtime artifacts.
+
+Agents may run, watch, rerun, and inspect GitHub Actions for the feature branch,
+download CI artifacts, and fix failures with additional commits and pushes.
+Verify the target branch/ref before pushing or dispatching a workflow. This
+authorization covers CI validation, not release or deployment workflows.
+
+Merging requires manual human intervention. Agents must not merge PRs, enable
+auto-merge, enqueue a merge, or push to main, master, or any protected/release
+branch. Leave a green PR for the operator to review and merge. Do not change
+repository protections, secrets, environments, or deployment settings.
+
 Agents must not:
 
 - force push;
 - rewrite history;
-- push directly to a remote unless explicitly instructed;
 - delete branches;
 - modify global git configuration;
 - commit secrets.
@@ -79,6 +94,13 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
+
+For implementation orchestration, publish the feature branch and draft PR,
+watch CI for the latest pushed commit, fix relevant failures, and repeat until
+required checks pass or a concrete external blocker is established. An older
+green run does not validate newer changes. Report the PR URL, tested commit,
+CI run URL/results, and any blockers. Human merge is the final handoff, not an
+agent action. Review-only tasks need not publish changes.
 
 Summarize:
 - files changed;

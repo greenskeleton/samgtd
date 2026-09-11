@@ -13,37 +13,60 @@ env:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to commit SHAs verified via `gh api repos/<owner>/<repo>/git/refs/tags/<tag>`
+      # (and, for the annotated rust-cache tag, `.../git/tags/<sha>` to
+      # resolve the tag object to its underlying commit) on 2026-09-11 — see
+      # docs/milestone-001-acceptance.md, "CI and reproducibility".
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        timeout-minutes: 5
 
       - name: Install Rust
+        timeout-minutes: 5
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
+          # Pinned to the exact version in rust-toolchain.toml, not a
+          # floating "stable" channel, so a compiler release cannot silently
+          # change what CI checks without a reviewed diff to that file.
+          # Verified as a real, published rust-lang/rust release (2026-09-03)
+          # via `gh api repos/rust-lang/rust/releases` on 2026-09-11.
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+          rustup default 1.98.1
 
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check whether workspace exists
-        id: cargo
-        shell: bash
-        run: |
-          if [[ -f Cargo.toml ]]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Bootstrap repository: Cargo.toml has not been created by the first agent yet."
-          fi
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 (2.9.2)
+        timeout-minutes: 5
 
       - name: Format
-        if: steps.cargo.outputs.exists == 'true'
+        timeout-minutes: 5
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        if: steps.cargo.outputs.exists == 'true'
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        timeout-minutes: 10
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Test
-        if: steps.cargo.outputs.exists == 'true'
-        run: cargo test --workspace --all-features
+        timeout-minutes: 10
+        run: cargo test --locked --workspace --all-features
+
+      # Runs the same real two-process/TCP/subprocess acceptance scenario
+      # already exercised by `cargo test` above (crates/samgtdd/tests/two_process_acceptance.rs),
+      # via the documented demo command, so hosted CI also produces the
+      # machine-readable results artifact and human-readable transcript
+      # described in docs/milestone-001-acceptance.md. Runs even if an
+      # earlier step failed, so failure diagnostics are still captured.
+      - name: Run acceptance demo (produces results artifact + transcript)
+        if: always()
+        timeout-minutes: 10
+        run: cargo run --locked -p samgtdd --example demo
+
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        timeout-minutes: 5
+        with:
+          name: milestone-001-acceptance-evidence
+          path: artifacts/acceptance/
+          if-no-files-found: warn
+          retention-days: 30
