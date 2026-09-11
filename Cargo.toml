@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/samgtd-domain",
+    "crates/samgtd-crdt",
+    "crates/samgtd-store",
+    "crates/samgtd-api",
+    "crates/samgtdd",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+publish = false

@@ -1,6 +1,6 @@
 # ADR 0001: Automerge for replicated state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
 
 ## Context
@@ -29,11 +29,9 @@ Costs:
 - schema evolution requires deliberate design;
 - projections/indexes must be kept consistent with CRDT state.
 
-## Open question for first agent
+## Resolved: document granularity
 
-Decide and document document granularity:
-- one dataset document;
-- one document per aggregate/entity;
-- hybrid index/root plus entity documents.
-
-The bootstrap recommendation is hybrid/root + per-entity docs, but this ADR must not be accepted until tested against the current Automerge Rust APIs.
+Resolved in `docs/adr/0003-existing-database-coexistence.md`, after
+inventorying the existing SQLite database: **hybrid root/index document plus
+one document per entity**, accepted as-is against the real data shape (see
+that ADR for rationale and known tradeoffs).
