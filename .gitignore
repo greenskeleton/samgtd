@@ -1,0 +1,30 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Local state / databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+
+# Agent run logs/reviews
+.agent/runs/
+.agent/*.log
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Private local inputs (including real GTD database)
+.local/
