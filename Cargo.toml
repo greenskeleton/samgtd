@@ -6,6 +6,7 @@ members = [
     "crates/samgtd-store",
     "crates/samgtd-api",
     "crates/samgtdd",
+    "crates/samgtd-testkit",
 ]
 
 [workspace.package]

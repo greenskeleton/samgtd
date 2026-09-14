@@ -36,6 +36,7 @@ Run:
 
 Update ADRs when implementation changes an architectural decision.
 
-Do not commit or push.
+Follow AGENTS.md for feature-branch commits, pushes, draft PRs, and GitHub CI.
+Leave merging to the operator.
 
 At the end, summarize changes, verification, and remaining Milestone 001 gaps.

@@ -104,12 +104,11 @@ Merging them produces a *conflict* on that key (Automerge picks one
 deterministically for reads), silently dropping the other peer's map — not
 an error, just quiet data loss.
 
-The fix (and the only correct approach): a dataset's root index document is
-created exactly once; every peer is provisioned from that same initial
-document (byte-for-byte, before any peer makes changes), never by calling
-`RootIndexDocument::new()` independently per device. This has a direct
-implication for device provisioning/pairing (not yet designed): pairing a
-new device must transfer the genesis document, not just say "start fresh."
+A dataset's root map must retain shared object history. Create it once and
+provision joining peers from its current saved history; they need not receive
+the original genesis snapshot or join before edits occur. Never initialize
+competing nested maps independently. ADR 0004 implements explicit provisioning
+and rejects conflicting root maps.
 
 ## Known tradeoffs
 

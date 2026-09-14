@@ -8,3 +8,4 @@ publish.workspace = true
 [dependencies]
 automerge = "0.11"
 thiserror = "1"
+samgtd-domain = { path = "../samgtd-domain" }

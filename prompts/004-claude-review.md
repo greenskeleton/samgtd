@@ -17,4 +17,5 @@ Run the verification suite.
 Write findings to `.agent/claude-final-review.md`.
 
 Do not rewrite the project merely to match personal style.
-Do not commit or push.
+This is a review-only step; leave findings for the implementation/CI handoff.
+Feature-branch publication is authorized under AGENTS.md; merging is manual.

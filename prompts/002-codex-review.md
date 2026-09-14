@@ -35,4 +35,5 @@ Include file/line references where possible.
 
 Run the project's verification commands and include results.
 
-Do not commit or push.
+This is a review-only step; leave findings for the implementation/CI handoff.
+Feature-branch publication is authorized under AGENTS.md; merging is manual.

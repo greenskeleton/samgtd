@@ -13,14 +13,21 @@ path = "src/main.rs"
 samgtd-api = { path = "../samgtd-api" }
 samgtd-crdt = { path = "../samgtd-crdt" }
 samgtd-store = { path = "../samgtd-store" }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+automerge = "0.11"
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-serde_json = "1"
 tempfile = "3"
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+samgtd-testkit = { path = "../samgtd-testkit" }

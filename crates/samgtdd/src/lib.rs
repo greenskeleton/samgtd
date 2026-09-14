@@ -2,23 +2,19 @@
 
 //! `samgtdd`: the local-first GTD daemon.
 //!
-//! This binary currently wires up only the HTTP boundary (`/health`). It
-//! does not yet load or persist any GTD entities: `AGENTS.md` ("Existing
-//! database compatibility") requires inventorying the existing SQLite
-//! database before this daemon initializes persistence or CRDT documents.
-
 pub mod config;
-mod persistence;
+pub mod service;
+pub mod transport;
 
 use axum::{routing::get, Json, Router};
 use samgtd_api::health::HealthResponse;
+use std::future::IntoFuture;
 
 pub use config::Config;
-pub use persistence::init_persistence;
 
 /// Build the daemon's HTTP router. Split out from `run` so integration tests
 /// can exercise it without binding a real socket.
-pub fn build_router() -> Router {
+pub fn build_router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new().route("/health", get(health))
 }
 
@@ -28,41 +24,65 @@ async fn health() -> Json<HealthResponse> {
 
 /// Bind and serve until a shutdown signal is received.
 pub async fn run(config: Config) -> anyhow::Result<()> {
-    let root = init_persistence(&config.db_path)?;
-    tracing::info!(
-        db_path = %config.db_path.display(),
-        known_tasks = root.task_uuids()?.len(),
-        "persistence initialized",
-    );
-
-    let app = build_router();
+    let path = config.db_path.clone();
+    let service = tokio::task::spawn_blocking(move || service::Service::open(&path)).await??;
+    let state = transport::App::new(service);
+    let app = transport::router(state.clone());
 
     tracing::info!(addr = %config.bind_addr, "starting samgtdd");
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    let local_addr = listener.local_addr()?;
+    tracing::info!(addr = %local_addr, "listening");
+    if let Some(ready_path) = &config.ready_path {
+        announce_ready(ready_path, local_addr)?;
+    }
+    let (shutdown_started, shutdown_received) = tokio::sync::oneshot::channel();
+    let server = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            state.shutdown();
+            let _ = shutdown_started.send(());
+        })
+        .into_future();
+    tokio::pin!(server);
+    tokio::select! {
+        result = &mut server => result?,
+        _ = shutdown_received => {
+            tokio::time::timeout(std::time::Duration::from_secs(10), &mut server).await??;
+        }
+    }
 
+    Ok(())
+}
+
+/// Write the real bound address to `path` atomically (write-then-rename), so
+/// a reader either sees nothing yet or a complete address, never a partial
+/// write.
+fn announce_ready(path: &std::path::Path, addr: std::net::SocketAddr) -> anyhow::Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, addr.to_string())?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        // Startup-time signal registration, not a request path: failure here
-        // is an unrecoverable environment error (AGENTS.md's unwrap/expect
-        // rule targets request paths, not process bring-up).
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "signal handler failed");
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "signal handler failed");
+            }
+        }
     };
 
     #[cfg(not(unix))]
