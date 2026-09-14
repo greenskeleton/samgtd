@@ -296,3 +296,26 @@ as an automated test (`cargo test -p samgtdd --test two_process_acceptance`,
 included in `cargo test --workspace`). See `docs/milestone-001-acceptance.md`
 for the full requirement-by-requirement evidence mapping, exact reproduction
 commands, the hosted CI run, and named remaining gaps.
+
+## UI planning and implementation prompts
+
+[PROJECT-KNOWLEDGE-HANDOFF.md](PROJECT-KNOWLEDGE-HANDOFF.md) preserves historical
+product goals and UX preferences. Current repository code, docs, ADRs, and API
+behavior remain authoritative when they conflict with the handoff.
+
+After the Milestone 001 PR is merged, use the existing agent workflow to run:
+
+1. [008 — UI architecture and Python audit](prompts/008-ui-architecture-and-python-audit.md)
+2. [009 — TUI MVP](prompts/009-tui-mvp.md)
+3. [010 — Web MVP](prompts/010-web-mvp.md)
+4. [011 — Cross-interface integration](prompts/011-cross-interface-integration.md)
+5. [012 — MVP hardening](prompts/012-mvp-hardening.md)
+
+Prompt 008 is primarily audit/architecture work, including inspection of the
+read-only legacy Python reference at `~/Development/samgtd-python`. Run these
+prompts through the existing agent scripts; they are planning/task material,
+not application code or a replacement bootstrap. For example:
+
+```sh
+./scripts/agent.sh codex prompts/008-ui-architecture-and-python-audit.md
+```
